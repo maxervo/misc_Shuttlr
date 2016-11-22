@@ -1,1 +1,1 @@
-# shuttlr
+Distributed Shared Memory App Launcher
