@@ -34,3 +34,54 @@ int creer_socket(int prop, int *port_num)
 /* et le processus intermediaire. N'oubliez pas */
 /* de declarer le prototype de ces nouvelles */
 /* fonctions dans common_impl.h */
+
+
+
+char** create_pool_hosts(char *filename, int *num_procs)
+{
+  //Init
+  FILE* myfile = fopen(filename, "r");
+  if(myfile == NULL)
+  {
+    perror("Error opening file");
+    exit(EXIT_FAILURE);
+  }
+  int no_lines = 0;
+  char c = 0;
+  char **pool = NULL;
+
+  //Count number of lines
+  while( (c = fgetc(myfile)) != EOF) {
+    if (c == '\n') {
+      no_lines++;
+    }
+  }
+
+  //Allocate memory
+  pool = malloc(no_lines * sizeof(char *));  //possible improvement init the array with NULLs
+  for (int i = 0; i < no_lines; i++) {
+    pool[i] = malloc(MAX_LEN_HOSTNAME * sizeof(char));
+  }
+
+  //Cursor back to init
+  rewind(myfile);
+
+  //Extract each line
+  for (int i = 0; i < no_lines; i++) {
+    fgets(pool[i], MAX_LEN_HOSTNAME, myfile);
+    pool[i][strlen(pool[i])-1] = '\0';  //remove the '\n' character captured
+  }
+
+  fclose(myfile);
+
+  //Output
+  *num_procs = no_lines;
+  return pool;
+}
+
+void destroy_pool_hosts(char **pool, int num_procs) {
+  for (int i = 0; i < num_procs; i++) {
+    free(pool[i]); //free each string
+  }
+  free(pool);  //free array
+}
