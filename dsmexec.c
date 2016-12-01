@@ -9,6 +9,7 @@
 
 #define MAX_PAGE_NUMBER
 #define MAX_PAGE_SIZE
+#define HOSTS_POOL_FILENAME "hosts_pool.txt"
 
 //creer processus et tubes pour le 28/11
 // récuperation de l'entrée des processus
@@ -55,15 +56,19 @@ int main(int argc, char *argv[])
      pid_t pid;
      int num_procs = 0;
      int i;
-     int j;
-     char *pointer;
+     char **pool_hosts = NULL;
+     //int j;
+     //char *pointer;
 
      /* Mise en place d'un traitant pour recuperer les fils zombies*/
      /* XXX.sa_handler = sigchld_handler; */
 
 
      /* lecture du fichier de machines */  /*déjà fait en cours */
-       machine_file = fopen("", "r+");
+     pool_hosts = create_pool_hosts(HOSTS_POOL_FILENAME, &num_procs);
+     printf("Num procs %d\n", num_procs);
+     destroy_pool_hosts(pool_hosts, num_procs);
+
      /* 1- on recupere le nombre de processus a lancer */
 
 
@@ -72,12 +77,14 @@ int main(int argc, char *argv[])
 
      /* creation de la socket d'ecoute */
      /* + ecoute effective */
-     listen_socket = socket (AF_INET,SOCK_STREAM,0); //pas les bons arguments
+     //listen_socket = socket (AF_INET,SOCK_STREAM,0); //pas les bons arguments
 
      /* creation des fils */
      for(i = 0; i < num_procs ; i++) {
 
 	/* creation du tube pour rediriger stdout */
+
+  /*
   int pipe1[1];
 
   if(pipe1[1]!= 0)
@@ -89,7 +96,10 @@ int main(int argc, char *argv[])
   {
     dup2(pipe[1], STDOUT_FILENO);
   }
+  */
+
   /* creation du tube pour rediriger stderr */
+  /*
   int pipe2[2];
   if(pipe2[2]!=0)
   {
@@ -98,7 +108,8 @@ int main(int argc, char *argv[])
   else
   {
       dup2(pipe2[2], STDERR_FILENO);
-  }
+  }*/
+
   pid = fork();
 	if(pid == -1)
   {
@@ -111,7 +122,7 @@ int main(int argc, char *argv[])
 	   /* redirection stderr */
 
 	   /* Creation du tableau d'arguments pour le ssh */
-	   char ssh_tab=[];
+	   //char ssh_tab=[];
 	   /* jump to new prog : */
 	   /* execvp("ssh",newargv); */
 
