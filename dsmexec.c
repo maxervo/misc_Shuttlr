@@ -65,14 +65,13 @@ int main(int argc, char *argv[])
 
 
      /* lecture du fichier de machines et number of proc to launch */
-     
+
      pool_hosts = create_pool_hosts(HOSTS_POOL_FILENAME, &num_procs);
      printf("Num procs %s\n", pool_hosts[0]);
      destroy_pool_hosts(pool_hosts, num_procs);
 
      /* creation de la socket d'ecoute */
-     /* + ecoute effective */
-     //listen_socket = socket (AF_INET,SOCK_STREAM,0); //pas les bons arguments
+     // ?
 
      /* creation des fils */
      for(i = 0; i < num_procs ; i++) {
