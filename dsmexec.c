@@ -9,7 +9,7 @@
 
 #define MAX_PAGE_NUMBER
 #define MAX_PAGE_SIZE
-#define HOSTS_POOL_FILENAME "hosts_pool.txt"
+#define HOSTS_POOL_FILENAME "machinefile"
 
 //creer processus et tubes pour le 28/11
 // récuperation de l'entrée des processus
@@ -64,16 +64,11 @@ int main(int argc, char *argv[])
      /* XXX.sa_handler = sigchld_handler; */
 
 
-     /* lecture du fichier de machines */  /*déjà fait en cours */
+     /* lecture du fichier de machines et number of proc to launch */
+     
      pool_hosts = create_pool_hosts(HOSTS_POOL_FILENAME, &num_procs);
-     printf("Num procs %d\n", num_procs);
+     printf("Num procs %s\n", pool_hosts[0]);
      destroy_pool_hosts(pool_hosts, num_procs);
-
-     /* 1- on recupere le nombre de processus a lancer */
-
-
-     /* 2- on recupere les noms des machines : le nom de */
-     /* la machine est un des elements d'identification */
 
      /* creation de la socket d'ecoute */
      /* + ecoute effective */

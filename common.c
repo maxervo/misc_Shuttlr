@@ -7,6 +7,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+/**
+ * \brief Creating socket
+ *
+ * \param prop Protocoto to use, port_num Port number
+ * \return file descriptor
+ */
 
 int create_socket(int prop, int *port_num)
 {
