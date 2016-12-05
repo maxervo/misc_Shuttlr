@@ -21,22 +21,17 @@ int create_socket(int prop, int *port_num)
   /* renvoie le numero de descripteur */
   /* et modifie le parametre port_num */
   int fd = 0;
-  if(prop==1) //TODO what magic number?
-  {
-    struct sockaddr_in serv_addr;
-    memset(&serv_addr,0,sizeof(serv_addr));
-    serv_addr.sin_port=htons(*port_num);
-    serv_addr.sin_family=AF_INET;
-    serv_addr.sin_addr.s_addr=INADDR_ANY;
-    fprintf(stdout,"Trying to connect with port_num %d\n",*port_num);
-    fd=socket(AF_INET,SOCK_STREAM,0);
-    if (fd == -1)
-    {
-      perror("socket");
-      exit(EXIT_FAILURE);
-    }
+  struct sockaddr_in serv_addr;
+  memset(&serv_addr,0,sizeof(serv_addr));
+  serv_addr.sin_port=htons(*port_num);
+  serv_addr.sin_family=AF_INET;
+  serv_addr.sin_addr.s_addr=INADDR_ANY;
+  fprintf(stdout,"Trying to connect with port_num %d\n",*port_num);
+  fd=socket(AF_INET,SOCK_STREAM,0);
+  if (fd == -1) {
+    perror("socket");
+    exit(EXIT_FAILURE);
   }
-
   return fd;
  }
 
