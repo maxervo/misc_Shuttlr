@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <netdb.h>
 
 /* autres includes (eventuellement) */
 

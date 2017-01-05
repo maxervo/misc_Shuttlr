@@ -22,16 +22,24 @@ int create_socket(int prop, int *port_num)    //TODO verify usefullness prop
   /* et modifie le parametre port_num */
   int fd = 0;
   struct sockaddr_in serv_addr;
+
+  //creation of the socket
+  fprintf(stdout,"Trying to connect with port_num %d\n",*port_num);
+  fd=socket(AF_INET,SOCK_STREAM,0);
   memset(&serv_addr,0,sizeof(serv_addr));
   serv_addr.sin_port=htons(*port_num);
   serv_addr.sin_family=AF_INET;
   serv_addr.sin_addr.s_addr=INADDR_ANY;
-  fprintf(stdout,"Trying to connect with port_num %d\n",*port_num);
-  fd=socket(AF_INET,SOCK_STREAM,0);
   if (fd == -1) {
     perror("socket");
     exit(EXIT_FAILURE);
-  }
+   }
+
+  // attachement of the socket
+  if(bind(fd,(struct sockaddr*) &servaddr, sizeof(servaddr)) <0) {
+     perror("bind");
+     exit(EXIT_FAILURE);
+   }
   return fd;
  }
 
