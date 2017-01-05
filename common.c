@@ -14,18 +14,20 @@
  * \return file descriptor
  */
 
-int create_socket(int prop, int *port_num)
+//TODO
+int create_socket(int prop, int *port_num)    //TODO verify usefullness prop
 {
   /* fonction de creation et d'attachement */
   /* d'une nouvelle socket */
   /* renvoie le numero de descripteur */
   /* et modifie le parametre port_num */
+
   int fd = 0;
   struct sockaddr_in serv_addr;
 
   //creation of the socket
-  fprintf(stdout,"Trying to connect with port_num %d\n",*port_num);
-  fd=socket(AF_INET,SOCK_STREAM,0);
+  //fprintf(stdout,"Trying to connect with port_num %d\n",*port_num);
+  fd=socket(AF_INET,SOCK_STREAM,prop);
   memset(&serv_addr,0,sizeof(serv_addr));
   serv_addr.sin_port=htons(*port_num);
   serv_addr.sin_family=AF_INET;
@@ -35,20 +37,22 @@ int create_socket(int prop, int *port_num)
     exit(EXIT_FAILURE);
    }
 
+
   // attachement of the socket
-  if(bind(fd,(struct sockaddr*) &servaddr, sizeof(servaddr)) <0) {
+  if(bind(fd,(struct sockaddr*) &serv_addr, sizeof(serv_addr)) <0) {
      perror("bind");
      exit(EXIT_FAILURE);
    }
   return fd;
- }
+}
+
 
 //Rest of Joseph's code
  /*while(connect(fd, (struct sockaddr *) & serv_addr, sizeof(serv_addr)) == -1)
    printf("Socket %d connected in TCP/IP mode \n", fd);
  {
    perror("connect");
- /*{ //Listenning socket
+ { //Listenning socket
    struct sockaddr_in addr_listen;
    fd = socket(AF_INET, SOCK_STREAM, 0);
    fprintf(stdout,"La socket %d est maintenant ouverte en mode TCP/IP\n", fd);
@@ -124,6 +128,7 @@ char** create_pool_hosts(char *filename, int *num_procs)
   pool = malloc(no_lines * sizeof(char *));  //possible improvement init the array with NULLs
   for (int i = 0; i < no_lines; i++) {
     pool[i] = malloc(MAX_LEN_HOSTNAME * sizeof(char));
+    memset(pool[i], '\0', MAX_LEN_HOSTNAME);
   }
 
   //Cursor back to init
