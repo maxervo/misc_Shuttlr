@@ -2,10 +2,11 @@
 
 int main(int argc, char **argv)
 {
+  /*
   if (argc < 3)
   {
     usage();
-  }
+  }*/
 
 
    /* processus intermediaire pour "nettoyer" */
@@ -15,7 +16,7 @@ int main(int argc, char **argv)
    /* creation d'une socket pour se connecter au */
    /* au lanceur et envoyer/recevoir les infos */
    /* necessaires pour la phase dsm_init */
-
+   /*
   struct hostent {
   char    *h_name;
   char   **h_aliases;
@@ -38,27 +39,27 @@ int main(int argc, char **argv)
 
 
 
-
+*/
 
 
    /* Envoi du nom de machine au lanceur */
 
    /* Envoi du pid au lanceur */
-   pid_t pid = getpid();
-   printf("%d\n", pid);
+   //pid_t pid = getpid();
+   //printf("%d\n", pid);
 
    /* Creation de la socket d'ecoute pour les */
    /* connexions avec les autres processus dsm */
-   sock_dsm=creer_socket();
-   if(listen(sock_dsm, BACKLOG) < 0) {
-    perror("listen");
-    exit(EXIT_FAILURE);
-  }
+   //sock_dsm=creer_socket();
+   //if(listen(sock_dsm, BACKLOG) < 0) {
+    //perror("listen");
+    //exit(EXIT_FAILURE);
+  //}
 
    /* Envoi du numero de port au lanceur */
    /* pour qu'il le propage à tous les autres */
    /* processus dsm */
 
    /* on execute la bonne commande */
-   return 0;
+   //return 0;
 }

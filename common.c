@@ -14,12 +14,14 @@
  * \return file descriptor
  */
 
-int create_socket(int prop, int *port_num)    //TODO verify usefullness prop
-{
+//TODO
+//int create_socket(int prop, int *port_num)    //TODO verify usefullness prop
+//{
   /* fonction de creation et d'attachement */
   /* d'une nouvelle socket */
   /* renvoie le numero de descripteur */
   /* et modifie le parametre port_num */
+  /*
   int fd = 0;
   struct sockaddr_in serv_addr;
 
@@ -35,13 +37,14 @@ int create_socket(int prop, int *port_num)    //TODO verify usefullness prop
     exit(EXIT_FAILURE);
    }
 
+
   // attachement of the socket
-  if(bind(fd,(struct sockaddr*) &servaddr, sizeof(servaddr)) <0) {
+  if(bind(fd,(struct sockaddr*) &serv_addr, sizeof(serv_addr)) <0) {
      perror("bind");
      exit(EXIT_FAILURE);
    }
-  return fd;
- }
+  return fd;*/
+//}
 
 //Rest of Joseph's code
  /*while(connect(fd, (struct sockaddr *) & serv_addr, sizeof(serv_addr)) == -1)
