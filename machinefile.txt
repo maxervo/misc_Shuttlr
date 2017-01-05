@@ -1,3 +1,0 @@
-hellotest
-world
-testhello

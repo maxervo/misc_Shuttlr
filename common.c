@@ -14,7 +14,7 @@
  * \return file descriptor
  */
 
-int create_socket(int prop, int *port_num)
+int create_socket(int prop, int *port_num)    //TODO verify usefullness prop
 {
   /* fonction de creation et d'attachement */
   /* d'une nouvelle socket */
@@ -40,7 +40,7 @@ int create_socket(int prop, int *port_num)
    printf("Socket %d connected in TCP/IP mode \n", fd);
  {
    perror("connect");
- /*{ //Listenning socket
+ { //Listenning socket
    struct sockaddr_in addr_listen;
    fd = socket(AF_INET, SOCK_STREAM, 0);
    fprintf(stdout,"La socket %d est maintenant ouverte en mode TCP/IP\n", fd);
@@ -116,6 +116,7 @@ char** create_pool_hosts(char *filename, int *num_procs)
   pool = malloc(no_lines * sizeof(char *));  //possible improvement init the array with NULLs
   for (int i = 0; i < no_lines; i++) {
     pool[i] = malloc(MAX_LEN_HOSTNAME * sizeof(char));
+    memset(pool[i], '\0', MAX_LEN_HOSTNAME);
   }
 
   //Cursor back to init

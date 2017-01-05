@@ -10,7 +10,7 @@
 
 /* autres includes (eventuellement) */
 
-#define MAX_LEN_HOSTNAME 25
+#define MAX_LEN_HOSTNAME 50
 #define ERROR_EXIT(str) {perror(str);exit(EXIT_FAILURE);}
 
 /* definition du type des infos */
