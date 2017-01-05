@@ -12,6 +12,7 @@
 /* autres includes (eventuellement) */
 
 #define MAX_LEN_HOSTNAME 50
+#define CLOSE_ABRUPT -1
 #define ERROR_EXIT(str) {perror(str);exit(EXIT_FAILURE);}
 
 /* definition du type des infos */
@@ -34,3 +35,6 @@ int creer_socket(int type, int *port_num);
 
 char** create_pool_hosts(char *filename, int *num_procs);
 void destroy_pool_hosts(char **pool, int num_procs);
+
+void do_send(int sockfd, char *buffer, int buffer_size);
+int do_recv(int sockfd, char *buffer, int buffer_size);

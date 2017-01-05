@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <ev.h>
 
 #define MAX_PAGE_NUMBER
 #define MAX_PAGE_SIZE
@@ -17,7 +18,12 @@
 #define ARG_SSH_TARGET 1
 #define ARG_EXECVP_NULL 1
 
+// every watcher type has its own typedef'd struct with the name ev_TYPE
+ev_io remote_process_watcher;
+
+static void remote_process_cb(EV_P_ ev_io *watcher, int revents);
 void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]);
+void monitor_loop(int pipe_array[], int num_procs);
 
 //creer processus et tubes pour le 28/11
 // récuperation de l'entrée des processus
@@ -91,7 +97,7 @@ int main(int argc, char *argv[])
 
       /* creation du tube pour rediriger stdout */
       pid = fork();
-      if(pid == -1)
+      if(pid < 0)
       {
         ERROR_EXIT("fork");
 
@@ -103,14 +109,21 @@ int main(int argc, char *argv[])
         /* fermeture des extremites des tubes non utiles */
         close(pipefd[1]); //becomes reader
         num_procs_creat++;
-        wait(NULL);
+
+        //launch monitoring loop after last one filled
+        if (i == num_procs-1) {
+          monitor_loop(pipe_array, num_procs);
+          for (int j = 0; j < num_procs; j++) {
+            wait(NULL);
+          }
+        }
       }
     }
     destroy_pool_hosts(pool_hosts, num_procs);
 
 
      for(i = 0; i < num_procs ; i++){
-	/* on accepte les connexions des processus dsm */
+  /* on accepte les connexions des processus dsm */
 
 	/*  On recupere le nom de la machine distante */
 	/* 1- d'abord la taille de la chaine */
@@ -146,10 +159,43 @@ int main(int argc, char *argv[])
      /* on ferme la socket d'ecoute */
   }
 
-   exit(EXIT_SUCCESS);
+  exit(EXIT_SUCCESS);
 }
 
+void monitor_loop(int pipe_array[], int num_procs) {
+  //default libev loop
+  struct ev_loop *loop = EV_DEFAULT;
 
+  for (int i = 0; i < num_procs; i++) {
+    //init watcher on stdout/stderr pipe
+    ev_io_init(&remote_process_watcher, remote_process_cb, pipe_array[2*i], EV_READ);   //pipe_array[0], pipe_array[2]...etc : because parent is reader so reading fd is monitored
+    ev_io_start(loop, &remote_process_watcher);
+  }
+
+  //waiting loop for events
+  ev_run(loop, 0);
+}
+
+static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
+{
+  if(EV_ERROR & revents)
+  {
+    perror("invalid event detected");
+    return;
+  }
+  int pipefd = watcher->fd;
+  char buffer[50] = {'\0'};
+
+  printf("stdin ready\n");
+  read(pipefd, buffer, 50);
+  printf("hey %s\n", buffer);
+
+  //for one-shot event
+  //ev_io_stop (EV_A_ w);
+
+  //stop iterating all nested ev_run's
+  //ev_break (EV_A_ EVBREAK_ALL);
+}
 
 void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
   //Var
@@ -158,8 +204,8 @@ void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
 
   //Becoming writer
   close(pipefd[0]);
-  //dup2(pipefd[1],STDOUT_FILENO);    //redirect stdout
-  //dup2(pipefd[1],STDERR_FILENO);    //redirect stderr
+  dup2(pipefd[1],STDOUT_FILENO);    //redirect stdout
+  dup2(pipefd[1],STDERR_FILENO);    //redirect stderr
 
   //Building exec ssh arguments
   ssh_tab = malloc(len_tab*sizeof(char *));
