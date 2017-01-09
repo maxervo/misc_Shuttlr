@@ -1,5 +1,8 @@
 #include "common_impl.h"
 
+struct hostent* get_server(const char *host_target);
+void init_serv_address(struct hostent* server, struct sockaddr_in* serv_addr_ptr, int port_no);
+
 int main(int argc, char **argv)
 {
   /*
@@ -62,4 +65,50 @@ int main(int argc, char **argv)
 
    /* on execute la bonne commande */
    //return 0;
+
+
+  // for server
+  int serv_sockfd;
+  int port_no;
+  struct sockaddr_in serv_addr;
+  struct hostent *server;
+
+  //Verifying arguments
+  if (argc < 3) {
+    fprintf(stderr,"Program %s needs arguments regarding target server: hostname, port\n", argv[0]);
+    exit(EXIT_FAILURE);
+  }
+  port_no = atoi(argv[2]);
+
+  /*   SERVER - CLIENT */
+  //Preparing
+  serv_sockfd = create_socket();
+  server = get_server(argv[1]);
+  init_serv_address(server, &serv_addr, port_no);
+
+  //Connect to server
+  if ( connect(serv_sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0 ) {
+    ERROR_EXIT("Error - connection");
+  }
+
+  char buffer[BUFFER_SIZE] = "Hello test";
+  write(serv_sockfd, buffer, BUFFER_SIZE);
+  
+}
+
+struct hostent* get_server(const char *host_target) {
+  struct hostent *server = gethostbyname(host_target);	//Later on: use addrinfo (cf. gethostbyname considered deprecated, and for ipv6...etc)
+  if (server == NULL) {
+    fprintf(stderr, "Error: No such host\n");
+    exit(EXIT_FAILURE);
+  }
+
+  return server;
+}
+
+void init_serv_address(struct hostent* server, struct sockaddr_in* serv_addr_ptr, int port_no) {
+  memset(serv_addr_ptr, 0, sizeof(struct sockaddr_in));
+  serv_addr_ptr->sin_family = AF_INET;
+  memcpy(server->h_addr, &(serv_addr_ptr->sin_addr.s_addr), server->h_length);
+  serv_addr_ptr->sin_port = htons(port_no);  //convert to network order
 }

@@ -10,9 +10,8 @@
 #include <netdb.h>
 
 /* autres includes (eventuellement) */
-
+#define BUFFER_SIZE 100
 #define MAX_LEN_HOSTNAME 50
-#define CLOSE_ABRUPT -1
 #define ERROR_EXIT(str) {perror(str);exit(EXIT_FAILURE);}
 
 /* definition du type des infos */
@@ -38,3 +37,6 @@ void destroy_pool_hosts(char **pool, int num_procs);
 
 void do_send(int sockfd, char *buffer, int buffer_size);
 int do_recv(int sockfd, char *buffer, int buffer_size);
+
+//TODO tmp replace by Joseph
+int create_socket();

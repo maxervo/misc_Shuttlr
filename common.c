@@ -154,6 +154,15 @@ void destroy_pool_hosts(char **pool, int num_procs) {
 }
 
 /* utilities */
+//TODO TMP replace by Joseph
+int create_socket() {
+  int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);   //Sockets config: Blocking  //Possible to add SO_REUSEADDR with setsockopt() during dev phase testing...etc
+  if (sockfd < 0) {
+    ERROR_EXIT("Error - socket opening");
+  }
+
+  return sockfd;
+}
 
 void do_send(int sockfd, char *buffer, int buffer_size) {
   int progress = 0; //total sent
@@ -172,10 +181,6 @@ int do_recv(int sockfd, char *buffer, int buffer_size) {
   do {
     if ( (read = recv(sockfd, buffer+read, buffer_size-read, 0)) < 0 ) {
       ERROR_EXIT("Error - recv");
-    }
-    else if(read == 0) {  //Connection closed abruptly by remote peer, receiving 0 bytes will have the same effect
-      close(sockfd);
-      return CLOSE_ABRUPT;
     }
     progress += read;
   } while(progress != buffer_size);

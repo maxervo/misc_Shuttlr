@@ -17,13 +17,20 @@
 #define ARG_EXECVP_NAME 1        //+3: because ssh @addr cmd_argv  NULL
 #define ARG_SSH_TARGET 1
 #define ARG_EXECVP_NULL 1
+#define MAX_FACTOR_QUEUE 5
 
+//TODO location
 // every watcher type has its own typedef'd struct with the name ev_TYPE
 ev_io remote_process_watcher;
+ev_io init_transmit_watcher;
 
 static void remote_process_cb(EV_P_ ev_io *watcher, int revents);
+static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
+static void init_accept_cb(EV_P_ ev_io *watcher, int revents);
 void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]);
-void monitor_loop(int pipe_array[], int num_procs);
+void monitor_loop(int master_sockfd, int pipe_array[], int num_procs);
+void init_serv_address(struct sockaddr_in *serv_addr_ptr, int port_no);
+void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr);
 
 //creer processus et tubes pour le 28/11
 // récuperation de l'entrée des processus
@@ -71,6 +78,9 @@ int main(int argc, char *argv[])
      int num_procs = 0;
      int i;
      char **pool_hosts = NULL;
+     int master_sockfd;
+     struct sockaddr_in serv_addr;
+     int port_no = 2500;  //TODO or let OS decide?
 
      char *machine_filename = argv[1];
      //int j;
@@ -84,8 +94,14 @@ int main(int argc, char *argv[])
      pool_hosts = create_pool_hosts(machine_filename, &num_procs);
      printf("Procs %s\n", pool_hosts[0]);
 
-     /* creation de la socket d'ecoute */
-     // ?
+     /* creation de la socket d'ecoute + lecture effective */
+     master_sockfd = create_socket();
+     init_serv_address(&serv_addr, port_no);
+     do_bind(master_sockfd, &serv_addr);
+     if(listen(master_sockfd, MAX_FACTOR_QUEUE*num_procs) < 0) {
+       ERROR_EXIT("Error - listen");
+     }
+
 
     /* creation des fils */
     int *pipe_array = malloc(2*num_procs*sizeof(int *));   //2: pipefd[2]
@@ -112,14 +128,23 @@ int main(int argc, char *argv[])
 
         //launch monitoring loop after last one filled
         if (i == num_procs-1) {
-          monitor_loop(pipe_array, num_procs);
-          for (int j = 0; j < num_procs; j++) {
-            wait(NULL);
-          }
+          sleep(1); //TODO
+
+          /*
+          printf("ok ready\n");
+          char buffer[50] = {'\0'};
+          read(master_sockfd, buffer, 50);
+          printf("here %s\n", buffer);
+          sleep(50);*/
+
+          monitor_loop(master_sockfd, pipe_array, num_procs);
         }
       }
     }
+
     destroy_pool_hosts(pool_hosts, num_procs);
+    //ev_loop_destroy (EV_DEFAULT_UC);
+    //free(pipe_array);
 
 
      for(i = 0; i < num_procs ; i++){
@@ -162,18 +187,24 @@ int main(int argc, char *argv[])
   exit(EXIT_SUCCESS);
 }
 
-void monitor_loop(int pipe_array[], int num_procs) {
+void monitor_loop(int master_sockfd, int pipe_array[], int num_procs) {
+
   //default libev loop
   struct ev_loop *loop = EV_DEFAULT;
 
-  for (int i = 0; i < num_procs; i++) {
-    //init watcher on stdout/stderr pipe
+  //Exchanging data through transmission canals at initialization
+  ev_io_init(&init_transmit_watcher, init_accept_cb, master_sockfd, EV_READ);
+  ev_io_start(loop, &init_transmit_watcher);
+
+  for (int i = 0; i < num_procs; i++) {                    //STDIN_FILENO
+    //init watcher on stdout/stderr pipe                  //pipe_array[2*i] TODO
     ev_io_init(&remote_process_watcher, remote_process_cb, pipe_array[2*i], EV_READ);   //pipe_array[0], pipe_array[2]...etc : because parent is reader so reading fd is monitored
     ev_io_start(loop, &remote_process_watcher);
   }
 
   //waiting loop for events
   ev_run(loop, 0);
+
 }
 
 static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
@@ -191,10 +222,78 @@ static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
   printf("hey %s\n", buffer);
 
   //for one-shot event
-  //ev_io_stop (EV_A_ w);
+  //ev_io_stop (EV_A_ watcher);
 
   //stop iterating all nested ev_run's
   //ev_break (EV_A_ EVBREAK_ALL);
+}
+
+static void init_accept_cb(EV_P_ ev_io *watcher, int revents)
+{
+  struct sockaddr_in cli_addr;
+  socklen_t cli_len = sizeof(cli_addr);
+  int cli_sockfd;
+  struct ev_io *watcher_cli = (struct ev_io*) malloc (sizeof(struct ev_io));
+
+  if(EV_ERROR & revents)
+  {
+    perror("invalid event detected");
+    return;
+  }
+
+  // Accept client request
+  cli_sockfd = accept(watcher->fd, (struct sockaddr *)&cli_addr, &cli_len);
+  if (cli_sockfd < 0)
+  {
+    perror("accept error");
+    return;
+  }
+
+  //Init and start watcher to read client requests TODO write
+  ev_io_init(watcher_cli, init_interact_cb, cli_sockfd, EV_READ);
+  ev_io_start(loop, watcher_cli);
+
+  printf("Successfully connected to client.\n");
+}
+
+/* Read client message */
+static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
+  char buffer[BUFFER_SIZE]; memset(buffer, 0, BUFFER_SIZE);
+  int reception_control;
+
+  if(EV_ERROR & revents)
+  {
+    perror("got invalid event");
+    return;
+  }
+
+  // Receive message from client socket
+  reception_control = recv(watcher->fd, buffer, BUFFER_SIZE, 0); //TODO do_recv
+  if(reception_control < 0)
+  {
+    perror("read error");
+    return;
+  }
+
+  //Socket closing
+  if(reception_control == 0)
+  {
+    // Stop and free watchet if client socket is closing
+    ev_io_stop(loop,watcher);
+    free(watcher);
+    perror("peer might closing");
+    return;
+  }
+
+  //Receive data
+  else
+  {
+    printf("message:%s\n", buffer);
+  }
+
+  // Send message bach to the client
+  //send(watcher->fd, buffer, read, 0);
+  //bzero(buffer, read);
 }
 
 void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
@@ -205,7 +304,7 @@ void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
   //Becoming writer
   close(pipefd[0]);
   dup2(pipefd[1],STDOUT_FILENO);    //redirect stdout
-  dup2(pipefd[1],STDERR_FILENO);    //redirect stderr
+  //dup2(pipefd[1],STDERR_FILENO);    //redirect stderr
 
   //Building exec ssh arguments
   ssh_tab = malloc(len_tab*sizeof(char *));
@@ -217,12 +316,32 @@ void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
   ssh_tab[len_tab-1] = NULL;
 
   //Jump to new program
-  execvp(ssh_tab[0], ssh_tab);
+  sleep(2);   //TODO
+  //execvp(ssh_tab[0], ssh_tab);
   //printf("Commande %s, then %s, %s, %s, %s\n", ssh_tab[0], ssh_tab[1], ssh_tab[2], ssh_tab[3], ssh_tab[4]);
+  printf("testchild\n");
 
   //Clean
+  sleep(2000);  //TODO
   free(ssh_tab);
 }
+
+
+/* Utilities */
+void init_serv_address(struct sockaddr_in *serv_addr_ptr, int port_no) {
+  memset(serv_addr_ptr, 0, sizeof(struct sockaddr_in));
+  serv_addr_ptr->sin_family = AF_INET;
+  serv_addr_ptr->sin_addr.s_addr = htonl(INADDR_ANY);  //INADDR_ANY : all interfaces - not just "localhost", multiple network interfaces OK
+  serv_addr_ptr->sin_port = htons(port_no);  //convert to network order
+}
+
+void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr) {
+  if ( bind(sockfd, (struct sockaddr *) serv_addr_ptr, sizeof(struct sockaddr_in))<0 ) {  //cast generic struct
+    ERROR_EXIT("Error - bind");
+  }
+}
+
+
 
 /* redirection stdout */ /* fermer les extremites */ /* un seul sens : le pere recoit les infos du fils */
 
