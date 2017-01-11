@@ -8,6 +8,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <string.h>
 
 /* autres includes (eventuellement) */
 #define BUFFER_SIZE 100
@@ -18,14 +19,17 @@
 /* de connexion des processus dsm */
 struct dsm_proc_conn  {
    int rank;
-   /* a completer */
+   int port;
 };
 typedef struct dsm_proc_conn dsm_proc_conn_t;
 
 /* definition du type des infos */
 /* d'identification des processus dsm */
 struct dsm_proc {
+  int slave_port;   //for connection identification
   pid_t pid;
+  char *hostname;
+  int hostname_len;  //protects against buffer overflows when exchanging length/hostanme during init
   dsm_proc_conn_t connect_info;
 };
 typedef struct dsm_proc dsm_proc_t;

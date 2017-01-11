@@ -91,9 +91,27 @@ int main(int argc, char **argv)
     ERROR_EXIT("Error - connection");
   }
 
-  char buffer[BUFFER_SIZE] = "Hello test";
+  char buffer[BUFFER_SIZE] = {'\0'}; //everything sent through buffer!!!! ATTENTION, always memset buffer then copy all in buffer then send
+  char hostname[20] = "Hello world";
+
+  //Simple test for endianness when remote machines at school
+  //Sending length
+  //char buffer_number[4] = {0};
+  int len = strlen(hostname); printf("len is %d\n", len);
+  memcpy(buffer, &len, 4);  //suppose endianness ok
   write(serv_sockfd, buffer, BUFFER_SIZE);
-  
+
+  //Sending hostname
+  memset(buffer, '\0', BUFFER_SIZE);
+  strncpy(buffer, hostname, len);
+  write(serv_sockfd, buffer, BUFFER_SIZE);
+
+  //Sending port socket interconnection dsm
+  memset(buffer, '\0', BUFFER_SIZE);
+  int myport = 5368;
+  memcpy(buffer, &myport, 4);  //suppose endianness ok
+  write(serv_sockfd, buffer, BUFFER_SIZE);
+
 }
 
 struct hostent* get_server(const char *host_target) {
