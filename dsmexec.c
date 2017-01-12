@@ -18,12 +18,13 @@
 #define ARG_SSH_TARGET 1
 #define ARG_EXECVP_NULL 1
 #define MAX_FACTOR_QUEUE 5
+#define TIMER 2
 
 //TODO location
 // every watcher type has its own typedef'd struct with the name ev_TYPE
 struct carrier_ev_io {
   ev_io io;
-  int slave_port; //to identify where it comes from, locally
+  int fd; //to identify where it comes from, locally
   int num_procs;
   dsm_proc_t *pool_remote_processes;
 };
@@ -31,6 +32,16 @@ typedef struct carrier_ev_io carrier_ev_io_t;
 
 carrier_ev_io_t remote_process_watcher;
 carrier_ev_io_t init_transmit_watcher;
+
+struct carrier_ev_timer {
+  ev_timer timer;
+  int num_procs;
+  dsm_proc_t *pool_remote_processes;
+};
+typedef struct carrier_ev_timer carrier_ev_timer_t;
+
+carrier_ev_timer_t timer_watcher;
+
 
 /*
 struct remote_process {
@@ -48,14 +59,16 @@ void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]);
 void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe_array[], int num_procs);
 void init_serv_address(struct sockaddr_in *serv_addr_ptr, int port_no);
 void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr);
-void attach_cli_data(carrier_ev_io_t *watcher_cli, ev_io *watcher, struct sockaddr_in cli_addr);
+void attach_cli_data(carrier_ev_io_t *watcher_cli, ev_io *watcher, int fd);
 
 dsm_proc_t *create_pool_remote_processes(int num_procs);
 void destroy_remote_process(dsm_proc_t *pool, int num_procs);
-int get_slave_rank(dsm_proc_t *pool_remote_processes, int slave_port, int num_procs);
-void insert_pool_proc(dsm_proc_t *pool_remote_processes, int slave_port, int num_procs);
-void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int slave_port, int num_procs);
+int get_conn_rank(dsm_proc_t *pool_remote_processes, int fd, int num_procs);
+void insert_pool_proc(dsm_proc_t *pool_remote_processes, int fd, int num_procs);
+void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int fd, int num_procs);
 int init_status(dsm_proc_t *pool_remote_processes, int num_procs);
+void send_dsm_info(dsm_proc_t *pool_remote_processes, int num_procs);
+static void timer_cb(EV_P_ ev_timer *watcher, int revents);
 
 //creer processus et tubes pour le 28/11
 // récuperation de l'entrée des processus
@@ -106,7 +119,7 @@ int main(int argc, char *argv[])
      dsm_proc_t *pool_remote_processes = NULL;
      int master_sockfd;
      struct sockaddr_in serv_addr;
-     int port_no = 2500;  //TODO or let OS decide?
+     int port_no = 1500;  //TODO or let OS decide?
 
      char *machine_filename = argv[1];
      //int j;
@@ -219,7 +232,7 @@ int main(int argc, char *argv[])
 void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe_array[], int num_procs) {
   //default libev loop
   struct ev_loop *loop = EV_DEFAULT;
-  int init_finished = 0;  //init running
+  //timer.repeat = 1000.;  //TODO maybe better way
 
   //init_transmit_watcher.data = (void*) pipe_array;
   //printf("hi %d\n", pool_remote_processes[1].connect_info.rank);
@@ -228,6 +241,13 @@ void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe
   //init_transmit_watcher
   init_transmit_watcher.num_procs = num_procs;
   init_transmit_watcher.pool_remote_processes = pool_remote_processes;
+  //timer_watcher
+  timer_watcher.num_procs = num_procs;
+  timer_watcher.pool_remote_processes = pool_remote_processes;
+
+  //Timer
+  ev_timer_init (&timer_watcher.timer, timer_cb, TIMER, 0.);
+  ev_timer_start (loop, &timer_watcher.timer);
 
   //Exchanging data through transmission canals at initialization
   ev_io_init(&(init_transmit_watcher.io), init_accept_cb, master_sockfd, EV_READ);
@@ -240,18 +260,30 @@ void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe
   }
 
   //waiting loop for events
-  while (1) { //TODO conditions
-    init_finished = init_status(pool_remote_processes, num_procs);
+  ev_loop(loop, 0);
 
-    //event loop
-    ev_loop(loop, 0);
+}
 
-    //Send all DSM information to remote machines
-    if (init_finished) {
-      send_dsm_info();
-    }
+static void timer_cb(EV_P_ ev_timer *watcher, int revents)
+{
+  int init_finished = 0; //init still running
+
+  //extract data carried by callback
+  carrier_ev_timer_t *carrier_watcher = (carrier_ev_timer_t *) watcher;
+  dsm_proc_t *pool_remote_processes = carrier_watcher->pool_remote_processes;
+  int num_procs = carrier_watcher->num_procs;
+
+  printf("HelloEveryone\n");
+  init_finished = init_status(pool_remote_processes, num_procs);
+  if (init_finished) {
+    printf("Init done\n");
+    send_dsm_info(pool_remote_processes, num_procs);
   }
 
+  //Reset timer
+  ev_timer_stop (loop, &timer_watcher.timer);
+  ev_timer_set (&timer_watcher.timer, TIMER, 0.);
+  ev_timer_start (loop, &timer_watcher.timer);
 }
 
 static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
@@ -262,11 +294,36 @@ static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
     return;
   }
   int pipefd = watcher->fd;
-  char buffer[50] = {'\0'};
+  char buffer[BUFFER_SIZE] = {'\0'};
+  int reception_control;
+
+  //ev_timer_again (loop, &timer);
 
   printf("stdin ready\n");
-  read(pipefd, buffer, 50);
-  printf("hey %s\n", buffer);
+  //read(pipefd, buffer, 50);
+
+  // Receive message from client socket
+  reception_control = read(pipefd, buffer, BUFFER_SIZE);
+  if(reception_control < 0)
+  {
+    perror("read error");
+    return;
+  }
+
+  //Socket closing
+  if(reception_control == 0)
+  {
+    //Stop and free watchet if client socket is closing
+    ev_io_stop(loop,watcher);
+    free(watcher);
+    perror("peer might be closing");
+    return;
+  }
+
+  //Msg
+  else {
+    printf("hey %s\n", buffer);
+  }
 
   //TODO if read = 0 then close and stop watcher
 
@@ -291,6 +348,8 @@ static void init_accept_cb(EV_P_ ev_io *watcher, int revents)
     return;
   }
 
+  //ev_timer_again (loop, &timer);
+
   // Accept client request
   cli_sockfd = accept(watcher->fd, (struct sockaddr *)&cli_addr, &cli_len);
   if (cli_sockfd < 0)
@@ -298,9 +357,10 @@ static void init_accept_cb(EV_P_ ev_io *watcher, int revents)
     perror("accept error");
     return;
   }
+  printf("socket in accept %d\n", cli_sockfd);
 
   /* Waterfall : attach data to client callback, and inserts process in pool */
-  attach_cli_data(watcher_cli, watcher, cli_addr);
+  attach_cli_data(watcher_cli, watcher, cli_sockfd);
 
   //Init and start watcher to read client requests TODO write
   ev_io_init(&(watcher_cli->io), init_interact_cb, cli_sockfd, EV_READ);
@@ -318,8 +378,10 @@ static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int re
   //extract data carried by callback
   carrier_ev_io_t *carrier_watcher = (carrier_ev_io_t *) watcher;
   dsm_proc_t *pool_remote_processes = carrier_watcher->pool_remote_processes;
-  int slave_port = carrier_watcher->slave_port;
+  int fd = carrier_watcher->fd;
   int num_procs = carrier_watcher->num_procs;
+
+  //ev_timer_again (loop, &timer);
 
   if(EV_ERROR & revents)
   {
@@ -348,12 +410,12 @@ static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int re
   //Receive data
   else
   {
-    int rank = get_slave_rank(pool_remote_processes, slave_port, num_procs);
+    int rank = get_conn_rank(pool_remote_processes, fd, num_procs);
     if (rank < 0) {
       perror("Not expected, client not inserted");
     }
     else {
-      handle_init_data(buffer, pool_remote_processes+rank, slave_port, num_procs);  //considering only the connected process e.i current rank
+      handle_init_data(buffer, pool_remote_processes+rank, fd, num_procs);  //considering only the connected process e.i current rank
     }
 
     printf("message:%s\n", buffer);
@@ -391,7 +453,8 @@ void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
 
   //Clean
   sleep(2000);  //TODO normally ok remote processes will be launched as daemons so child fork not dying ok (or in dsmwrap send a special text to end it)
-  free(ssh_tab);
+  free(ssh_tab);    //TODO how to do when execvp executes after instructions?
+  close(pipefd[1]);
 }
 
 
@@ -416,7 +479,7 @@ dsm_proc_t *create_pool_remote_processes(int num_procs)
   //Allocate memory
   pool = malloc(num_procs * sizeof(dsm_proc_t));  //possible improvement init the array with NULLs
   for (int i = 0; i < num_procs; i++) {
-    pool[i].slave_port = 0;
+    pool[i].fd = 0;
     pool[i].pid = 0;
     pool[i].hostname = NULL;
     pool[i].hostname_len = 0;
@@ -434,38 +497,38 @@ void destroy_remote_process(dsm_proc_t *pool, int num_procs) {
   free(pool);  //free array
 }
 
-void attach_cli_data(carrier_ev_io_t *watcher_cli, ev_io *watcher, struct sockaddr_in cli_addr) {
+void attach_cli_data(carrier_ev_io_t *watcher_cli, ev_io *watcher, int cli_sockfd) {
   carrier_ev_io_t *carrier_watcher = (carrier_ev_io_t *) watcher;
 
   //waterfall transfer
   watcher_cli->num_procs = carrier_watcher->num_procs;
   watcher_cli->pool_remote_processes = carrier_watcher->pool_remote_processes;
 
-  //attach port accepted for client
-  watcher_cli->slave_port = cli_addr.sin_port;
+  //attach fd accepted for client
+  watcher_cli->fd = cli_sockfd;
 
   //inserts in process information into pool
-  insert_pool_proc(watcher_cli->pool_remote_processes, watcher_cli->slave_port, watcher_cli->num_procs);
+  insert_pool_proc(watcher_cli->pool_remote_processes, watcher_cli->fd, watcher_cli->num_procs);
 }
 
-int get_slave_rank(dsm_proc_t *pool_remote_processes, int slave_port, int num_procs) {
+int get_conn_rank(dsm_proc_t *pool_remote_processes, int fd, int num_procs) {
   for (int i = 0; i < num_procs; i++) {
-    if (pool_remote_processes[i].slave_port == slave_port) {
+    if (pool_remote_processes[i].fd == fd) {
       return i; //rank found
     }
   }
   return -1; //neutral element for ports, so not defined
 }
 
-void insert_pool_proc(dsm_proc_t *pool_remote_processes, int slave_port, int num_procs) {
+void insert_pool_proc(dsm_proc_t *pool_remote_processes, int fd, int num_procs) {
   for (int i = 0; i < num_procs; i++) {
-    if (!pool_remote_processes[i].slave_port) { //empty slot
-      pool_remote_processes[i].slave_port = slave_port; //reserved
+    if (!pool_remote_processes[i].fd) { //empty slot
+      pool_remote_processes[i].fd = fd; //reserved
     }
   }
 }
 
-void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int slave_port, int num_procs) {     //Further: possible to user json-c library to exchange all this data in json, more elegant but less low level
+void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int fd, int num_procs) {     //Further: possible to user json-c library to exchange all this data in json, more elegant but less low level
   //Sent in order, cf. note on synchronous function occupying the event loop (even if event-loop has asynchronous IO)
 
   //Hostname length
@@ -480,6 +543,12 @@ void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int slave_port, int nu
   else if(strlen(dsm_proc->hostname) == 0) {
     strncpy(dsm_proc->hostname, buffer, dsm_proc->hostname_len);  //CRITICAL: protection against buffer overflows (non trusted users for length sent and next string)
     printf("string is %s\n", dsm_proc->hostname);
+  }
+
+  //Hostname string
+  else if(!dsm_proc->pid) {
+    dsm_proc->pid = *(int *) buffer;  //idem endian, scope statement supposes it
+    printf("pid is %d\n", dsm_proc->pid);
   }
 
   //Interconnection port for DSM
@@ -497,11 +566,46 @@ void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int slave_port, int nu
 int init_status(dsm_proc_t *pool_remote_processes, int num_procs) {
   for (int i = 0; i < num_procs; i++) {
     if (!pool_remote_processes[i].connect_info.port) { //
+      printf("%d\n", pool_remote_processes[i].connect_info.port);
       return 0; //still initializing
     }
   }
   return 1;
 }
+
+void send_dsm_info(dsm_proc_t *pool_remote_processes, int num_procs) {
+  char buffer[BUFFER_SIZE] = {'\0'};
+
+  printf("socket %d\n", pool_remote_processes[0].fd);   //TODO pb
+
+  for (int i = 0; i < num_procs; i++) {
+    //send num_procs
+    memset(buffer, '\0', BUFFER_SIZE);
+    memcpy(buffer, &num_procs, sizeof(int));  //scope statement endianness
+    //do_send(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);
+    write(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);
+
+    //send rank
+    memset(buffer, '\0', BUFFER_SIZE);
+    memcpy(buffer, &(pool_remote_processes[i].connect_info.rank), sizeof(int));  //scope statement endianness
+    //do_send(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);
+    write(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);
+
+    //send all connection info to each remote process
+    for (int j = 0; j < num_procs; j++) {
+      memset(buffer, '\0', BUFFER_SIZE);
+      memcpy(buffer, &(pool_remote_processes[j].connect_info.port), sizeof(int));  //scope statement endianness
+      //do_send(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);   //or do a bulk send to send all in one request
+      write(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);
+    }
+  }
+}
+
+/* envoi du nombre de processus aux processus dsm*/
+
+/* envoi des rangs aux processus dsm */
+
+/* envoi des infos de connexion aux processus */
 
 
 

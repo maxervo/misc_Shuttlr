@@ -156,7 +156,9 @@ void destroy_pool_hosts(char **pool, int num_procs) {
 /* utilities */
 //TODO TMP replace by Joseph
 int create_socket() {
-  int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);   //Sockets config: Blocking  //Possible to add SO_REUSEADDR with setsockopt() during dev phase testing...etc
+  int option = 1;
+  int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);   //Sockets config: Blocking  //TODO Possible to add SO_REUSEADDR with setsockopt() during dev phase testing...etc
+  setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
   if (sockfd < 0) {
     ERROR_EXIT("Error - socket opening");
   }

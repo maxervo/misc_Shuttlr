@@ -98,7 +98,7 @@ int main(int argc, char **argv)
   //Sending length
   //char buffer_number[4] = {0};
   int len = strlen(hostname); printf("len is %d\n", len);
-  memcpy(buffer, &len, 4);  //suppose endianness ok
+  memcpy(buffer, &len, sizeof(int));  //suppose endianness ok
   write(serv_sockfd, buffer, BUFFER_SIZE);
 
   //Sending hostname
@@ -108,9 +108,30 @@ int main(int argc, char **argv)
 
   //Sending port socket interconnection dsm
   memset(buffer, '\0', BUFFER_SIZE);
-  int myport = 5368;
-  memcpy(buffer, &myport, 4);  //suppose endianness ok
+  int pid = 10;
+  memcpy(buffer, &pid, sizeof(int));  //suppose endianness ok
   write(serv_sockfd, buffer, BUFFER_SIZE);
+
+  //Sending port socket interconnection dsm
+  memset(buffer, '\0', BUFFER_SIZE);
+  int myport = 5368;
+  memcpy(buffer, &myport, sizeof(int));  //suppose endianness ok
+  write(serv_sockfd, buffer, BUFFER_SIZE);
+
+  //Receive num_procs
+  memset(buffer, '\0', BUFFER_SIZE);
+  recv(serv_sockfd, buffer, BUFFER_SIZE, 0);
+  printf("Hello num_procs %d\n", * (int *) buffer);
+
+  //Receive rank
+  memset(buffer, '\0', BUFFER_SIZE);
+  recv(serv_sockfd, buffer, BUFFER_SIZE, 0);
+  printf("Hello rank %d\n", * (int *) buffer);
+
+  //Receive all ports interconnected for dsm
+  memset(buffer, '\0', BUFFER_SIZE);
+  recv(serv_sockfd, buffer, BUFFER_SIZE, 0);
+  printf("Hello ports %d\n", * (int *) buffer);
 
 }
 

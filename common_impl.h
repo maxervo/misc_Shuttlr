@@ -26,7 +26,7 @@ typedef struct dsm_proc_conn dsm_proc_conn_t;
 /* definition du type des infos */
 /* d'identification des processus dsm */
 struct dsm_proc {
-  int slave_port;   //for connection identification
+  int fd;   //for connection identification
   pid_t pid;
   char *hostname;
   int hostname_len;  //protects against buffer overflows when exchanging length/hostanme during init
