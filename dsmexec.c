@@ -20,8 +20,8 @@
 #define MAX_FACTOR_QUEUE 5
 #define TIMER 2
 
-//TODO location
 // every watcher type has its own typedef'd struct with the name ev_TYPE
+//IO
 struct carrier_ev_io {
   ev_io io;
   int fd; //to identify where it comes from, locally
@@ -29,10 +29,7 @@ struct carrier_ev_io {
   dsm_proc_t *pool_remote_processes;
 };
 typedef struct carrier_ev_io carrier_ev_io_t;
-
-carrier_ev_io_t remote_process_watcher;
-carrier_ev_io_t init_transmit_watcher;
-
+//Timer
 struct carrier_ev_timer {
   ev_timer timer;
   int num_procs;
@@ -40,78 +37,65 @@ struct carrier_ev_timer {
 };
 typedef struct carrier_ev_timer carrier_ev_timer_t;
 
-carrier_ev_timer_t timer_watcher;
+//General
+void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]);
+void init_serv_address(struct sockaddr_in *serv_addr_ptr, int port_no);
+void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr);
 
+//Event-loop
+void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe_array[], int num_procs);
+void attach_cli_data(carrier_ev_io_t *watcher_cli, ev_io *watcher, int fd);
 
-/*
-struct remote_process {
-  int rank;
-  int slave_port; //to identify where it comes from, locally
-  int pid;
-  int inter_port;
-  char *hostname;
-};*/
-
+//Callbacks
 static void remote_process_cb(EV_P_ ev_io *watcher, int revents);
 static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 static void init_accept_cb(EV_P_ ev_io *watcher, int revents);
-void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]);
-void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe_array[], int num_procs);
-void init_serv_address(struct sockaddr_in *serv_addr_ptr, int port_no);
-void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr);
-void attach_cli_data(carrier_ev_io_t *watcher_cli, ev_io *watcher, int fd);
+static void timer_cb(EV_P_ ev_timer *watcher, int revents);
 
+//Processes
 dsm_proc_t *create_pool_remote_processes(int num_procs);
 void destroy_remote_process(dsm_proc_t *pool, int num_procs);
-int get_conn_rank(dsm_proc_t *pool_remote_processes, int fd, int num_procs);
 void insert_pool_proc(dsm_proc_t *pool_remote_processes, int fd, int num_procs);
+int get_conn_rank(dsm_proc_t *pool_remote_processes, int fd, int num_procs);
+
+//Actions
 void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int fd, int num_procs);
 int init_status(dsm_proc_t *pool_remote_processes, int num_procs);
 void send_dsm_info(dsm_proc_t *pool_remote_processes, int num_procs);
-static void timer_cb(EV_P_ ev_timer *watcher, int revents);
-
-//creer processus et tubes pour le 28/11
-// récuperation de l'entrée des processus
-
-//processus fils->processus distant
 
 /* variables globales */
-
-/* un tableau gerant les infos d'identification */
-/* des processus dsm */
+//un tableau gerant les infos d'identification des processus dsm
 //dsm_proc_t *pool_remote_processes = NULL; global
-
-/* le nombre de processus effectivement crees */
+//le nombre de processus effectivement crees
 volatile int num_procs_creat = 0;
 
-void usage(void)
-{
+//Watchers struct
+carrier_ev_io_t remote_process_watcher;
+carrier_ev_io_t init_transmit_watcher;
+carrier_ev_timer_t timer_watcher;
+
+void usage(void) {
   fprintf(stdout,"Usage : dsmexec machine_file executable arg1 arg2 ...\n");
   fflush(stdout);
   exit(EXIT_FAILURE);
 }
 
-void sigchld_handler(int sig)
-{
+void sigchld_handler(int sig) {
    /* on traite les fils qui se terminent */
    /* pour eviter les zombies */
   int err_saved = errno;
-  while (waitpid(-1,NULL,WNOHANG) > 0)
-  {
+  while (waitpid(-1,NULL,WNOHANG) > 0)  {
     num_procs_creat=num_procs_creat-1;
   }
   errno = err_saved;
 }
 
 
-int main(int argc, char *argv[])
-{
-  if (argc < 3)
-  {
+int main(int argc, char *argv[]) {
+  if (argc < 3) {
     usage();
   }
-  else
-  {
+  else {
      pid_t pid;
      int num_procs = 0;
      int i;
@@ -122,21 +106,19 @@ int main(int argc, char *argv[])
      int port_no = 1500;  //TODO or let OS decide?
 
      char *machine_filename = argv[1];
-     //int j;
-     //char *pointer;
 
-     /* Mise en place d'un traitant pour recuperer les fils zombies */
+     /* Mise en place d'un traitant pour recuperer les fils zombies TODO */
      /* XXX.sa_handler = sigchld_handler; */
 
 
-     /* lecture du fichier de machines et number of proc to launch */
+     //read name machines and so number of proc to launch
      pool_hosts = create_pool_hosts(machine_filename, &num_procs);
-     printf("Procs %s\n", pool_hosts[0]);
+     printf("First process will be on %s\n", pool_hosts[0]);
 
-     /* pool of remote processes */
+     //pool of remote processes
      pool_remote_processes = create_pool_remote_processes(num_procs);
 
-     /* creation de la socket d'ecoute + lecture effective */
+     //create listening socket and listen
      master_sockfd = create_socket();
      init_serv_address(&serv_addr, port_no);
      do_bind(master_sockfd, &serv_addr);
@@ -152,24 +134,24 @@ int main(int argc, char *argv[])
       pipefd = pipe_array+2*i;
       pipe(pipefd);
 
-      /* creation du tube pour rediriger stdout */
+      //create child and pipes to redirect stdout
       pid = fork();
       if(pid < 0)
       {
         ERROR_EXIT("fork");
 
       } else if (pid == 0) { /* child */
-        printf("child is %s\n", pool_hosts[i]);
+        printf("Spawning process on %s\n", pool_hosts[i]);
         child_actor(pipefd, pool_hosts[i], argc-ARG_USAGE_MOD, argv+ARG_USAGE_MOD); //becomes writer
 
       } else if(pid > 0) { /* parent */
-        /* fermeture des extremites des tubes non utiles */
+        //close pipe ends not used
         close(pipefd[1]); //becomes reader
         num_procs_creat++;
 
         //launch monitoring loop after last one filled    //TODO
         if (i == num_procs-1) {
-          sleep(1); //TODO
+          //sleep(10); //TODO
 
           /*
           printf("ok ready\n");
@@ -188,42 +170,6 @@ int main(int argc, char *argv[])
     //free(pipe_array);
     //destroy_remote_process
 
-
-     for(i = 0; i < num_procs ; i++){
-  /* on accepte les connexions des processus dsm */
-
-	/*  On recupere le nom de la machine distante */
-	/* 1- d'abord la taille de la chaine */
-	/* 2- puis la chaine elle-meme */
-
-	/* On recupere le pid du processus distant  */
-
-	/* On recupere le numero de port de la socket */
-	/* d'ecoute des processus distants */
-     }
-
-     /* envoi du nombre de processus aux processus dsm*/
-
-     /* envoi des rangs aux processus dsm */
-
-     /* envoi des infos de connexion aux processus */
-
-     /* gestion des E/S : on recupere les caracteres */
-     /* sur les tubes de redirection de stdout/stderr */
-     /* while(1)
-         {
-            je recupere les infos sur les tubes de redirection
-            jusqu'à ce qu'ils soient inactifs (ie fermes par les
-            processus dsm ecrivains de l'autre cote ...)
-
-         };
-      */
-
-     /* on attend les processus fils */
-
-     /* on ferme les descripteurs proprement */
-
-     /* on ferme la socket d'ecoute */
   }
 
   exit(EXIT_SUCCESS);
@@ -232,10 +178,6 @@ int main(int argc, char *argv[])
 void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe_array[], int num_procs) {
   //default libev loop
   struct ev_loop *loop = EV_DEFAULT;
-  //timer.repeat = 1000.;  //TODO maybe better way
-
-  //init_transmit_watcher.data = (void*) pipe_array;
-  //printf("hi %d\n", pool_remote_processes[1].connect_info.rank);
 
   /* Waterfall : attach data to callbacks */
   //init_transmit_watcher
@@ -253,8 +195,8 @@ void monitor_loop(int master_sockfd, dsm_proc_t *pool_remote_processes, int pipe
   ev_io_init(&(init_transmit_watcher.io), init_accept_cb, master_sockfd, EV_READ);
   ev_io_start(loop, &(init_transmit_watcher.io));
 
-  for (int i = 0; i < num_procs; i++) {                    //STDIN_FILENO
-    //init watcher on stdout/stderr pipe                  //pipe_array[2*i] TODO
+  for (int i = 0; i < num_procs; i++) {
+    //init watcher on stdout/stderr pipe
     ev_io_init(&remote_process_watcher.io, remote_process_cb, pipe_array[2*i], EV_READ);   //pipe_array[0], pipe_array[2]...etc : because parent is reader so reading fd is monitored
     ev_io_start(loop, &remote_process_watcher.io);
   }
@@ -273,7 +215,6 @@ static void timer_cb(EV_P_ ev_timer *watcher, int revents)
   dsm_proc_t *pool_remote_processes = carrier_watcher->pool_remote_processes;
   int num_procs = carrier_watcher->num_procs;
 
-  printf("HelloEveryone\n");
   init_finished = init_status(pool_remote_processes, num_procs);
   if (init_finished) {
     printf("Init done\n");
@@ -288,8 +229,7 @@ static void timer_cb(EV_P_ ev_timer *watcher, int revents)
 
 static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
 {
-  if(EV_ERROR & revents)
-  {
+  if(EV_ERROR & revents) {
     perror("invalid event detected");
     return;
   }
@@ -297,22 +237,18 @@ static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
   char buffer[BUFFER_SIZE] = {'\0'};
   int reception_control;
 
-  //ev_timer_again (loop, &timer);
-
-  printf("stdin ready\n");
-  //read(pipefd, buffer, 50);
+  printf("From child processes : IO detected\n");
 
   // Receive message from client socket
   reception_control = read(pipefd, buffer, BUFFER_SIZE);
-  if(reception_control < 0)
-  {
+  printf("%d\n", reception_control);
+  if(reception_control < 0) {
     perror("read error");
     return;
   }
 
   //Socket closing
-  if(reception_control == 0)
-  {
+  if(reception_control == 0) {  //TODO not working
     //Stop and free watchet if client socket is closing
     ev_io_stop(loop,watcher);
     free(watcher);
@@ -322,10 +258,8 @@ static void remote_process_cb(EV_P_ ev_io *watcher, int revents)
 
   //Msg
   else {
-    printf("hey %s\n", buffer);
+    printf("IO pipes message: %s\n", buffer);
   }
-
-  //TODO if read = 0 then close and stop watcher
 
   //for one-shot event
   //ev_io_stop (EV_A_ watcher);
@@ -339,25 +273,19 @@ static void init_accept_cb(EV_P_ ev_io *watcher, int revents)
   struct sockaddr_in cli_addr;
   socklen_t cli_len = sizeof(cli_addr);
   int cli_sockfd;
-  //tmp struct ev_io *watcher_cli = (struct ev_io*) malloc (sizeof(struct ev_io));
-  carrier_ev_io_t *watcher_cli = (carrier_ev_io_t *) malloc (sizeof(carrier_ev_io_t));  //Tcleaned at end of communication init_interact_cb
+  carrier_ev_io_t *watcher_cli = (carrier_ev_io_t *) malloc (sizeof(carrier_ev_io_t));  //cleaned with free at end of communication init_interact_cb
 
-  if(EV_ERROR & revents)
-  {
+  if(EV_ERROR & revents) {
     perror("invalid event detected");
     return;
   }
 
-  //ev_timer_again (loop, &timer);
-
   // Accept client request
   cli_sockfd = accept(watcher->fd, (struct sockaddr *)&cli_addr, &cli_len);
-  if (cli_sockfd < 0)
-  {
+  if (cli_sockfd < 0) {
     perror("accept error");
     return;
   }
-  printf("socket in accept %d\n", cli_sockfd);
 
   /* Waterfall : attach data to client callback, and inserts process in pool */
   attach_cli_data(watcher_cli, watcher, cli_sockfd);
@@ -381,25 +309,20 @@ static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int re
   int fd = carrier_watcher->fd;
   int num_procs = carrier_watcher->num_procs;
 
-  //ev_timer_again (loop, &timer);
-
-  if(EV_ERROR & revents)
-  {
+  if(EV_ERROR & revents) {
     perror("got invalid event");
     return;
   }
 
   // Receive message from client socket
   reception_control = do_recv(watcher->fd, buffer, BUFFER_SIZE);
-  if(reception_control < 0)
-  {
+  if(reception_control < 0) {
     perror("read error");
     return;
   }
 
   //Socket closing
-  if(reception_control == 0)
-  {
+  if(reception_control == 0) {
     //Stop and free watchet if client socket is closing
     ev_io_stop(loop,watcher);
     free(watcher);
@@ -408,8 +331,7 @@ static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int re
   }
 
   //Receive data
-  else
-  {
+  else {
     int rank = get_conn_rank(pool_remote_processes, fd, num_procs);
     if (rank < 0) {
       perror("Not expected, client not inserted");
@@ -417,24 +339,18 @@ static void init_interact_cb(struct ev_loop *loop, struct ev_io *watcher, int re
     else {
       handle_init_data(buffer, pool_remote_processes+rank, fd, num_procs);  //considering only the connected process e.i current rank
     }
-
-    printf("message:%s\n", buffer);
   }
-
-  // Send message bach to the client
-  //send(watcher->fd, buffer, read, 0);
-  //bzero(buffer, read);
 }
 
 void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
   //Var
   char **ssh_tab = NULL;
   int len_tab = cmd_argc + ARG_EXECVP_NAME + ARG_SSH_TARGET + ARG_EXECVP_NULL;   //+3: because ssh @addr cmd_argv  NULL
-
+  //sleep(10);
   //Becoming writer
   close(pipefd[0]);
   dup2(pipefd[1],STDOUT_FILENO);    //redirect stdout
-  //dup2(pipefd[1],STDERR_FILENO);    //redirect stderr TODO
+  dup2(pipefd[1],STDERR_FILENO);    //redirect stderr
 
   //Building exec ssh arguments
   ssh_tab = malloc(len_tab*sizeof(char *));       //Later on possible to extend by doing custom ports cf. for use on docker containers port maps
@@ -446,15 +362,15 @@ void child_actor(int pipefd[], char *target, int cmd_argc, char *cmd_argv[]) {
   ssh_tab[len_tab-1] = NULL;
 
   //Jump to new program
-  sleep(2);   //TODO
-  //execvp(ssh_tab[0], ssh_tab);
+  //sleep(2);   //TODO
+  printf("Ready - IO linked\n");
+  //execvp(ssh_tab[0], ssh_tab);  //TODO
   //printf("Commande %s, then %s, %s, %s, %s\n", ssh_tab[0], ssh_tab[1], ssh_tab[2], ssh_tab[3], ssh_tab[4]);
-  printf("testchild\n");
 
   //Clean
   sleep(2000);  //TODO normally ok remote processes will be launched as daemons so child fork not dying ok (or in dsmwrap send a special text to end it)
-  free(ssh_tab);    //TODO how to do when execvp executes after instructions?
-  close(pipefd[1]);
+  free(ssh_tab);    //TODO how to do when execvp
+  //close(pipefd[1]);
 }
 
 
@@ -554,7 +470,7 @@ void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int fd, int num_procs)
   //Interconnection port for DSM
   else if(!(dsm_proc->connect_info.port)) {
     dsm_proc->connect_info.port = *(int *) buffer;  //idem endian, scope statement supposes it
-    printf("co info is %d\n", dsm_proc->connect_info.port);
+    printf("co info is %d\n\n", dsm_proc->connect_info.port);
   }
 
   //Not expected
@@ -565,8 +481,7 @@ void handle_init_data(char *buffer, dsm_proc_t *dsm_proc, int fd, int num_procs)
 
 int init_status(dsm_proc_t *pool_remote_processes, int num_procs) {
   for (int i = 0; i < num_procs; i++) {
-    if (!pool_remote_processes[i].connect_info.port) { //
-      printf("%d\n", pool_remote_processes[i].connect_info.port);
+    if (!pool_remote_processes[i].connect_info.port) {
       return 0; //still initializing
     }
   }
@@ -576,13 +491,11 @@ int init_status(dsm_proc_t *pool_remote_processes, int num_procs) {
 void send_dsm_info(dsm_proc_t *pool_remote_processes, int num_procs) {
   char buffer[BUFFER_SIZE] = {'\0'};
 
-  printf("socket %d\n", pool_remote_processes[0].fd);   //TODO pb
-
   for (int i = 0; i < num_procs; i++) {
     //send num_procs
     memset(buffer, '\0', BUFFER_SIZE);
     memcpy(buffer, &num_procs, sizeof(int));  //scope statement endianness
-    //do_send(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);
+    //do_send(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);  //TODO
     write(pool_remote_processes[i].fd, buffer, BUFFER_SIZE);
 
     //send rank
@@ -606,65 +519,3 @@ void send_dsm_info(dsm_proc_t *pool_remote_processes, int num_procs) {
 /* envoi des rangs aux processus dsm */
 
 /* envoi des infos de connexion aux processus */
-
-
-
-/* redirection stdout */ /* fermer les extremites */ /* un seul sens : le pere recoit les infos du fils */
-
-/* redirection stderr */
-
-/* Creation du tableau d'arguments pour le ssh */
-//char ssh_tab=[];
-/* jump to new prog : */
-/* execvp("ssh",newargv); */
-
-
-/*
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-
-
-int main(int argc, char **argv)
-{
-  int pipe1[2];
-  pid_t pid;
-
-  pipe(pipe1);
-  pid = fork();
-
-  if( pid > 0) {
-    close(pipe1[1]);
-    dup2(pipe1[0],STDIN_FILENO);
-    execlp("wc","wc","-l",NULL);
-  }
-  else if (0 == pid)
-    {
-      int pipe2[2];
-      pid_t pid2;
-
-      close(pipe1[0]);
-      pipe(pipe2);
-      pid2 = fork();
-
-      if (pid2 > 0) {
-	close(pipe2[1]);
-	dup2(pipe1[1],STDOUT_FILENO);
-	dup2(pipe2[0],STDIN_FILENO);
-	execlp("grep","grep","truc",NULL);
-      }
-      else if ( 0 == pid2 )
-	{
-	  close(pipe1[1]);
-	  close(pipe2[0]);
-	  dup2(pipe2[1],STDOUT_FILENO);
-	  execlp("cat","cat","toto.txt",NULL);
-	}
-    }
-
-  return 0;
-}
-
-
-*/
